@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Users, Baby, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { User, Users, Baby, Clock, CheckCircle, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 // Using MongoDB service instead of Firestore
 // import { firestoreService } from '@/services/firestore-service';
@@ -322,6 +322,24 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
                 )}
               </CardContent>
             </Card>
+
+            {/* Warning when attendance already taken */}
+            {isEditing && employee.attendanceRecord && (
+              <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-3">
+                <div className="flex items-center space-x-3">
+                  <AlertTriangle className="h-8 w-8 text-red-500 flex-shrink-0" />
+                  <p className="text-sm text-yellow-700 font-medium">
+                    Attendance already recorded for {[
+                      employee.attendanceRecord.employee && 'Employee',
+                      employee.attendanceRecord.spouse && 'Spouse',
+                      employee.attendanceRecord.kid1 && (employee.attendanceRecord.kidNames?.kid1 || 'Child 1'),
+                      employee.attendanceRecord.kid2 && (employee.attendanceRecord.kidNames?.kid2 || 'Child 2'),
+                      employee.attendanceRecord.kid3 && (employee.attendanceRecord.kidNames?.kid3 || 'Child 3'),
+                    ].filter(Boolean).join(', ') || 'no members'}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Error Display */}
             {saveError && (

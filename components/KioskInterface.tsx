@@ -3,6 +3,16 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Users, UserCheck, Clock, Filter, AlertTriangle, RefreshCw, CloudOff, Cloud, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 // Using MongoDB service instead of Firestore
 // import { firestoreService } from '@/services/firestore-service';
@@ -39,6 +49,10 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
   // Modal state
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeWithAttendance | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Warning dialog state for already marked attendance
+  const [pendingEmployee, setPendingEmployee] = useState<EmployeeWithAttendance | null>(null);
+  const [isWarningOpen, setIsWarningOpen] = useState(false);
 
   // Sorting state
   type SortField = 'empId' | 'name' | 'eligibility' | 'status';
@@ -359,8 +373,51 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
 
   // Handle employee row click
   const handleEmployeeClick = (employee: EmployeeWithAttendance) => {
-    setSelectedEmployee(employee);
-    setIsModalOpen(true);
+    // Check if attendance already marked for any family member
+    if (employee.attendanceRecord && (
+      employee.attendanceRecord.employee ||
+      employee.attendanceRecord.spouse ||
+      employee.attendanceRecord.kid1 ||
+      employee.attendanceRecord.kid2 ||
+      employee.attendanceRecord.kid3
+    )) {
+      // Show warning dialog first
+      setPendingEmployee(employee);
+      setIsWarningOpen(true);
+    } else {
+      // No attendance marked, open modal directly
+      setSelectedEmployee(employee);
+      setIsModalOpen(true);
+    }
+  };
+
+  // Handle warning dialog confirm - proceed to attendance modal
+  const handleWarningConfirm = () => {
+    if (pendingEmployee) {
+      setSelectedEmployee(pendingEmployee);
+      setIsModalOpen(true);
+    }
+    setIsWarningOpen(false);
+    setPendingEmployee(null);
+  };
+
+  // Handle warning dialog cancel - go back to list
+  const handleWarningCancel = () => {
+    setIsWarningOpen(false);
+    setPendingEmployee(null);
+  };
+
+  // Get list of family members with attendance marked
+  const getMarkedMembers = (employee: EmployeeWithAttendance | null): string => {
+    if (!employee?.attendanceRecord) return '';
+    const members = [
+      employee.attendanceRecord.employee && 'Employee',
+      employee.attendanceRecord.spouse && 'Spouse',
+      employee.attendanceRecord.kid1 && (employee.attendanceRecord.kidNames?.kid1 || 'Child 1'),
+      employee.attendanceRecord.kid2 && (employee.attendanceRecord.kidNames?.kid2 || 'Child 2'),
+      employee.attendanceRecord.kid3 && (employee.attendanceRecord.kidNames?.kid3 || 'Child 3'),
+    ].filter(Boolean);
+    return members.join(', ');
   };
 
   // Handle modal close
@@ -727,6 +784,29 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Warning Dialog for Already Marked Attendance */}
+      <AlertDialog open={isWarningOpen} onOpenChange={setIsWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center space-x-3 mb-2">
+              <AlertTriangle className="h-10 w-10 text-red-500" />
+              <AlertDialogTitle className="text-xl">Attendance Already Recorded</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-base">
+              Attendance has already been recorded for: <strong className="text-yellow-700">{getMarkedMembers(pendingEmployee)}</strong>
+              <br /><br />
+              Do you want to edit the existing attendance record?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleWarningCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWarningConfirm} className="bg-blue-600 hover:bg-blue-700">
+              OK, Edit Attendance
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Attendance Modal */}
       <AttendanceModal

@@ -16,10 +16,10 @@ const STORAGE_KEY_API_URL = 'markme_backend_api_url';
 const STORAGE_KEY_SOCKET_URL = 'markme_backend_socket_url';
 const STORAGE_KEY_API_KEY = 'markme_api_key';
 
-// Default values (used if localStorage is empty)
-const DEFAULT_API_URL = process.env.NEXT_PUBLIC_MONGODB_API_URL || 'http://localhost:5000/api';
-const DEFAULT_SOCKET_URL = process.env.NEXT_PUBLIC_MONGODB_SOCKET_URL || 'http://localhost:5000';
-const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'markme-secret-key-2024';
+// Default values - Using Cloudflare tunnel for production
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_MONGODB_API_URL || 'https://api.aarifshaik.me/api';
+const DEFAULT_SOCKET_URL = process.env.NEXT_PUBLIC_MONGODB_SOCKET_URL || 'https://api.aarifshaik.me';
+const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'myWM9^FBsUwwjaYDWF^yFfG7sTjm^3P!PvFx9sj&9FAVejo9ux';
 
 /**
  * Get the current backend API URL (from localStorage or default)
