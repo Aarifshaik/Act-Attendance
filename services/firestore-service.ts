@@ -671,22 +671,31 @@ export class FirestoreService {
         const employees = await this.getEmployeesWithAttendanceByCluster(cluster);
         
         const totalMembers = employees.length;
-        const presentCount = employees.filter(emp => 
-          emp.attendanceRecord && (
-            emp.attendanceRecord.employee || 
-            emp.attendanceRecord.spouse || 
-            emp.attendanceRecord.kid1 || 
-            emp.attendanceRecord.kid2 || 
-            emp.attendanceRecord.kid3
-          )
-        ).length;
+        let headCount = 0;
+        const presentCount = employees.filter(emp => {
+          if (emp.attendanceRecord) {
+            if (emp.attendanceRecord.employee) headCount++;
+            if (emp.attendanceRecord.spouse) headCount++;
+            if (emp.attendanceRecord.kid1) headCount++;
+            if (emp.attendanceRecord.kid2) headCount++;
+            if (emp.attendanceRecord.kid3) headCount++;
+            
+            return emp.attendanceRecord.employee || 
+              emp.attendanceRecord.spouse || 
+              emp.attendanceRecord.kid1 || 
+              emp.attendanceRecord.kid2 || 
+              emp.attendanceRecord.kid3;
+          }
+          return false;
+        }).length;
         const pendingCount = totalMembers - presentCount;
 
         stats.push({
           cluster,
           totalMembers,
           presentCount,
-          pendingCount
+          pendingCount,
+          headCount
         });
       }
 

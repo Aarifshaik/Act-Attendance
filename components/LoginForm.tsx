@@ -51,18 +51,19 @@ export default function LoginForm() {
         if (storedUser) {
           try {
             const parsedUser = JSON.parse(storedUser);
+            // Use window.location for reliable navigation on static exports
             if (parsedUser.role === 'admin') {
-              router.replace('/admin');
+              window.location.href = '/admin';
             } else if (parsedUser.role === 'kiosk') {
-              router.replace('/kiosk');
+              window.location.href = '/kiosk';
             } else {
-              router.replace('/login');
+              window.location.href = '/login';
             }
           } catch {
-            router.replace('/login');
+            window.location.href = '/login';
           }
         } else {
-          router.replace('/login');
+          window.location.href = '/login';
         }
       } else {
         setLoginError(result.error || 'Login failed');

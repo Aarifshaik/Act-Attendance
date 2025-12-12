@@ -3,7 +3,8 @@ const nextConfig = {
   // Static export for GitHub Pages deployment
   output: 'export',
   
-  basePath: '/markme',
+  // No basePath needed with custom domain
+  // basePath: '/Act-Attendance',
   eslint: {
     ignoreDuringBuilds: true,
   },

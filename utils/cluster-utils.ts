@@ -165,17 +165,37 @@ export function filterEmployeesBySearch(employees: Employee[], searchTerm: strin
  * Create cluster statistics summary
  */
 export function createClusterStatsSummary(employees: EmployeeWithAttendance[]): ClusterStats[] {
-  const grouped = groupEmployeesByCluster(employees);
+  // Group employees by cluster (using EmployeeWithAttendance type)
+  const grouped: Record<ClusterType, EmployeeWithAttendance[]> = {
+    'Vijayawada': [],
+    'Nellore': [],
+    'Visakhapatnam': []
+  };
+  
+  employees.forEach(employee => {
+    if (CLUSTERS.includes(employee.cluster as ClusterType)) {
+      grouped[employee.cluster as ClusterType].push(employee);
+    }
+  });
   
   return CLUSTERS.map(cluster => {
     const clusterEmployees = grouped[cluster];
     const stats = calculateClusterAttendanceStats(clusterEmployees);
     
+    // Calculate head count
+    let headCount = 0;
+    clusterEmployees.forEach(emp => {
+      if (emp.attendanceRecord) {
+        headCount += countPresentMembers(emp.attendanceRecord);
+      }
+    });
+    
     return {
       cluster,
       totalMembers: stats.totalEmployees,
       presentCount: stats.presentEmployees,
-      pendingCount: stats.pendingEmployees
+      pendingCount: stats.pendingEmployees,
+      headCount
     };
   });
 }

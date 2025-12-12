@@ -823,6 +823,7 @@ interface ClusterStat {
   cluster: string;
   totalEmployees: number;
   attendedCount: number;
+  headCount?: number;
 }
 
 interface OverviewStat {

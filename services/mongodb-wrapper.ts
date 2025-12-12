@@ -151,7 +151,8 @@ export class MongoDBService {
       cluster: s.cluster,
       totalMembers: s.totalEmployees,
       presentCount: s.attendedCount,
-      pendingCount: s.totalEmployees - s.attendedCount
+      pendingCount: s.totalEmployees - s.attendedCount,
+      headCount: (s as any).headCount || 0
     }));
   }
 
