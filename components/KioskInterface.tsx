@@ -53,6 +53,9 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
   // Warning dialog state for already marked attendance
   const [pendingEmployee, setPendingEmployee] = useState<EmployeeWithAttendance | null>(null);
   const [isWarningOpen, setIsWarningOpen] = useState(false);
+  
+  // Eligibility warning dialog state
+  const [isEligibilityWarningOpen, setIsEligibilityWarningOpen] = useState(false);
 
   // Sorting state
   type SortField = 'empId' | 'name' | 'eligibility' | 'status';
@@ -373,6 +376,18 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
 
   // Handle employee row click
   const handleEmployeeClick = (employee: EmployeeWithAttendance) => {
+    // Check if employee is not eligible (No or empty eligibility)
+    const isNotEligible = !employee.eligibility || 
+      employee.eligibility.toLowerCase() === 'no' || 
+      employee.eligibility.toLowerCase() === 'not eligible';
+    
+    if (isNotEligible) {
+      // Show eligibility warning first
+      setPendingEmployee(employee);
+      setIsEligibilityWarningOpen(true);
+      return;
+    }
+    
     // Check if attendance already marked for any family member
     if (employee.attendanceRecord && (
       employee.attendanceRecord.employee ||
@@ -389,6 +404,36 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
       setSelectedEmployee(employee);
       setIsModalOpen(true);
     }
+  };
+
+  // Handle eligibility warning confirm - proceed to check attendance
+  const handleEligibilityConfirm = () => {
+    if (pendingEmployee) {
+      // Check if attendance already marked
+      if (pendingEmployee.attendanceRecord && (
+        pendingEmployee.attendanceRecord.employee ||
+        pendingEmployee.attendanceRecord.spouse ||
+        pendingEmployee.attendanceRecord.kid1 ||
+        pendingEmployee.attendanceRecord.kid2 ||
+        pendingEmployee.attendanceRecord.kid3
+      )) {
+        // Show attendance warning next
+        setIsEligibilityWarningOpen(false);
+        setIsWarningOpen(true);
+      } else {
+        // Open modal directly
+        setSelectedEmployee(pendingEmployee);
+        setIsModalOpen(true);
+        setIsEligibilityWarningOpen(false);
+        setPendingEmployee(null);
+      }
+    }
+  };
+
+  // Handle eligibility warning cancel
+  const handleEligibilityCancel = () => {
+    setIsEligibilityWarningOpen(false);
+    setPendingEmployee(null);
   };
 
   // Handle warning dialog confirm - proceed to attendance modal
@@ -803,6 +848,29 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
             <AlertDialogCancel onClick={handleWarningCancel}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleWarningConfirm} className="bg-blue-600 hover:bg-blue-700">
               OK, Edit Attendance
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Warning Dialog for Not Eligible Employee */}
+      <AlertDialog open={isEligibilityWarningOpen} onOpenChange={setIsEligibilityWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center space-x-3 mb-2">
+              <AlertTriangle className="h-10 w-10 text-orange-500" />
+              <AlertDialogTitle className="text-xl">User Not Eligible</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-base">
+              <strong className="text-orange-700">{pendingEmployee?.name || pendingEmployee?.empId}</strong> is marked as <strong className="text-red-600">Not Eligible</strong> for this event.
+              <br /><br />
+              Do you wish to continue marking attendance anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleEligibilityCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleEligibilityConfirm} className="bg-orange-600 hover:bg-orange-700">
+              Continue Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

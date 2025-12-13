@@ -42,7 +42,13 @@ export function getSocketUrl(): string {
  */
 export function getApiKey(): string {
   if (typeof window === 'undefined') return DEFAULT_API_KEY;
-  return localStorage.getItem(STORAGE_KEY_API_KEY) || DEFAULT_API_KEY;
+  const storedKey = localStorage.getItem(STORAGE_KEY_API_KEY);
+  if (storedKey) {
+    console.log(`🔑 Using API key from localStorage: ${storedKey.substring(0, 10)}...`);
+    return storedKey;
+  }
+  console.log(`🔑 Using default API key: ${DEFAULT_API_KEY.substring(0, 10)}...`);
+  return DEFAULT_API_KEY;
 }
 
 /**
@@ -184,6 +190,7 @@ async function initializeSocket(): Promise<any> {
   const { io } = await import('socket.io-client');
   
   console.log(`🔌 Connecting to socket at: ${newSocketUrl}`);
+  console.log(`🔑 Socket API key being used: ${newApiKey ? newApiKey.substring(0, 10) + '...' : 'NONE'}`);
   
   socket = io(newSocketUrl, {
     autoConnect: true,

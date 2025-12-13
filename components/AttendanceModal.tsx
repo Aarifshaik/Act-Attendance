@@ -15,10 +15,20 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -68,6 +78,11 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
   const [isSaving, setIsSaving] = useState(false);
   const [previewTime, setPreviewTime] = useState<Date>(new Date());
   const [saveError, setSaveError] = useState<string | null>(null);
+  
+  // Token popup state
+  const [showTokenPopup, setShowTokenPopup] = useState(false);
+  const [tokenCount, setTokenCount] = useState(0);
+  const [savedEmployee, setSavedEmployee] = useState<EmployeeWithAttendance | null>(null);
 
   // Update preview time every second
   useEffect(() => {
@@ -144,6 +159,12 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
         throw new Error('Employee ID is required');
       }
 
+      // Validate at least one person is marked present
+      const presentCount = Object.values(attendance).filter(Boolean).length;
+      if (presentCount === 0) {
+        throw new Error('Please mark at least one family member as present');
+      }
+
       // Prepare attendance record
       const attendanceRecord: Omit<AttendanceRecord, 'markedAt'> = {
         employee: attendance.employee,
@@ -196,7 +217,6 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
       };
 
       // Show success toast with enhanced messaging
-      const presentCount = Object.values(attendance).filter(Boolean).length;
       const familyMembers = [];
       if (attendance.employee) familyMembers.push('Employee');
       if (attendance.spouse) familyMembers.push('Spouse');
@@ -210,9 +230,10 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
         duration: 4000,
       });
 
-      // Call parent callback to trigger UI updates and close modal
-      onSave(updatedEmployee);
-      onClose();
+      // Show token popup instead of immediately closing
+      setTokenCount(presentCount);
+      setSavedEmployee(updatedEmployee);
+      setShowTokenPopup(true);
 
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error));
@@ -227,6 +248,15 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Handle token popup OK click
+  const handleTokenPopupClose = () => {
+    setShowTokenPopup(false);
+    if (savedEmployee) {
+      onSave(savedEmployee);
+    }
+    onClose();
   };
 
   const isEditing = employee?.attendanceRecord !== undefined;
@@ -248,6 +278,9 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
               </Badge>
             )}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Mark attendance for employee {employee.empId}
+          </DialogDescription>
         </DialogHeader>
 
         {/* Compact Layout - All in one view */}
@@ -426,9 +459,10 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || presentCount === 0}
             className="min-w-[100px]"
             size="sm"
+            title={presentCount === 0 ? 'Please select at least one family member' : ''}
           >
             {isSaving ? (
               <div className="flex items-center space-x-2">
@@ -440,7 +474,36 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
             )}
           </Button>
         </DialogFooter>
+
+        {/* Validation hint when no one selected */}
+        {presentCount === 0 && (
+          <p className="text-xs text-orange-600 text-center -mt-1">
+            Please select at least one family member to mark attendance
+          </p>
+        )}
       </DialogContent>
+
+      {/* Token Count Popup */}
+      <AlertDialog open={showTokenPopup} onOpenChange={setShowTokenPopup}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-center text-2xl">
+              🎟️ Token Count
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-xl font-bold py-4">
+              Issue <span className="text-3xl text-green-600">{tokenCount}</span> token set{tokenCount !== 1 ? 's' : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-center sm:justify-center">
+            <AlertDialogAction 
+              onClick={handleTokenPopupClose}
+              className="bg-green-600 hover:bg-green-700 px-8 py-2 text-lg"
+            >
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
@@ -457,6 +520,9 @@ export default function AttendanceModal(props: AttendanceModalProps) {
                 <AlertCircle className="h-5 w-5 text-red-600" />
                 <span>Modal Error</span>
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                An error occurred in the attendance modal
+              </DialogDescription>
             </DialogHeader>
             <div className="py-6 text-center space-y-4">
               <p className="text-gray-600">
