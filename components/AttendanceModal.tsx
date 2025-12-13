@@ -84,7 +84,22 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
   
   // Token popup state
   const [showTokenPopup, setShowTokenPopup] = useState(false);
-  const [tokenCount, setTokenCount] = useState(0);
+  const [tokenDelta, setTokenDelta] = useState<{ type: 'issue' | 'collect' | 'nochange'; count: number }>({ type: 'issue', count: 0 });
+
+  // Helper: count present members from attendance state and others
+  const getPresentCount = (att: AttendanceState, kidNames: KidNamesState, others: OtherPerson[]): number => {
+    let count = 0;
+    if (att.employee) count++;
+    if (att.spouse) count++;
+    if (att.kid1 && kidNames.kid1?.trim()) count++;
+    if (att.kid2 && kidNames.kid2?.trim()) count++;
+    if (att.kid3 && kidNames.kid3?.trim()) count++;
+    others.forEach(o => {
+      if (o.name?.trim()) count++;
+    });
+    return count;
+  };
+
   const [savedEmployee, setSavedEmployee] = useState<EmployeeWithAttendance | null>(null);
 
   // Update preview time every second
@@ -284,8 +299,53 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
         duration: 4000,
       });
 
-      // Show token popup instead of immediately closing
-      setTokenCount(presentCount);
+      // Calculate token delta
+      let deltaType: 'issue' | 'collect' | 'nochange' = 'issue';
+      let deltaCount = presentCount;
+
+      if (isEditing && employee.attendanceRecord) {
+        // Get previous present count
+        const prevAttendance: AttendanceState = {
+          employee: employee.attendanceRecord.employee,
+          spouse: employee.attendanceRecord.spouse,
+          kid1: employee.attendanceRecord.kid1,
+          kid2: employee.attendanceRecord.kid2,
+          kid3: employee.attendanceRecord.kid3,
+        };
+        const prevKidNames: KidNamesState = employee.attendanceRecord.kidNames
+          ? {
+              kid1: employee.attendanceRecord.kidNames.kid1 ?? '',
+              kid2: employee.attendanceRecord.kidNames.kid2 ?? '',
+              kid3: employee.attendanceRecord.kidNames.kid3 ?? '',
+            }
+          : { kid1: '', kid2: '', kid3: '' };
+        const prevOthers = employee.attendanceRecord.others || [];
+        
+        const prevCount = getPresentCount(prevAttendance, prevKidNames, prevOthers);
+        const currCount = presentCount;
+        
+        const difference = currCount - prevCount;
+        
+        if (difference > 0) {
+          // More people now - issue extra tokens
+          deltaType = 'issue';
+          deltaCount = difference;
+        } else if (difference < 0) {
+          // Fewer people now - collect tokens
+          deltaType = 'collect';
+          deltaCount = Math.abs(difference);
+        } else {
+          // Same count - no change
+          deltaType = 'nochange';
+          deltaCount = 0;
+        }
+      } else {
+        // New attendance - issue tokens for all present
+        deltaType = 'issue';
+        deltaCount = presentCount;
+      }
+
+      setTokenDelta({ type: deltaType, count: deltaCount });
       setSavedEmployee(updatedEmployee);
       setShowTokenPopup(true);
 
@@ -616,7 +676,17 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
               🎟️ Token Count
             </AlertDialogTitle>
             <AlertDialogDescription className="text-center text-xl font-bold py-4">
-              Issue <span className="text-3xl text-green-600">{tokenCount}</span> token set{tokenCount !== 1 ? 's' : ''}
+              {tokenDelta.type === 'nochange' ? (
+                <span className="text-gray-600">No change in tokens</span>
+              ) : tokenDelta.type === 'issue' ? (
+                <>
+                  Issue <span className="text-3xl text-green-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
+                </>
+              ) : (
+                <>
+                  Collect <span className="text-3xl text-red-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="justify-center sm:justify-center">
