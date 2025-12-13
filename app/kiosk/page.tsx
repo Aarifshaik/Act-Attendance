@@ -3,6 +3,7 @@
 import ProtectedRoute from '@/components/ProtectedRoute';
 import KioskInterface from '@/components/KioskInterface';
 import Navigation from '@/components/Navigation';
+import Footer from '@/components/Footer';
 
 function KioskContent() {
   return (
@@ -14,6 +15,7 @@ function KioskContent() {
         {/* Kiosk Interface Content */}
         <KioskInterface />
       </div>
+      <Footer />
     </main>
   );
 }

@@ -9,14 +9,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Settings, Check, X, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { Settings, Check, X, Loader2, Wifi, WifiOff, RotateCcw } from 'lucide-react';
 import { 
   getBackendUrl, 
   setBackendUrl, 
   checkBackendHealth,
   getApiKey,
   setApiKey,
-  reconnectSocket
+  reconnectSocket,
+  resetBackendSettings
 } from '@/services/mongodb-service';
 
 type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'failed';
@@ -83,6 +84,27 @@ export default function BackendSettings() {
     try {
       await reconnectSocket();
       console.log('🔌 Socket reconnected with new settings');
+    } catch (err) {
+      console.error('Failed to reconnect socket:', err);
+    }
+  };
+
+  const handleReset = async () => {
+    // Reset to defaults
+    resetBackendSettings();
+    
+    // Reload the default values
+    const defaultUrl = getBackendUrl();
+    const defaultKey = getApiKey();
+    setUrl(defaultUrl);
+    setApiKeyValue(defaultKey);
+    setCurrentUrl(defaultUrl);
+    
+    // Test and reconnect
+    await testConnection(defaultUrl);
+    try {
+      await reconnectSocket();
+      console.log('🔌 Socket reconnected with default settings');
     } catch (err) {
       console.error('Failed to reconnect socket:', err);
     }
@@ -204,6 +226,18 @@ export default function BackendSettings() {
               Test
             </Button>
           </div>
+
+          {/* Reset to defaults button */}
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleReset}
+            disabled={status === 'testing'}
+            className="w-full text-muted-foreground"
+          >
+            <RotateCcw className="mr-2 h-3 w-3" />
+            Reset to Defaults
+          </Button>
 
           {/* Current active URL display */}
           <div className="pt-2 border-t">

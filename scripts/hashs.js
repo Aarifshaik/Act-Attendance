@@ -12,25 +12,25 @@ function generateHash(password) {
 // Generate hashes for all users
 const passwords = {
   // Vijayawada users
-  'vja_user1': 'vijayawada1',
-  'vja_user2': 'vijayawada2',
-  'vja_user3': 'vijayawada3',
-  'vja_user4': 'vijayawada4',
+  'vja1': 'Act@VJA1',
+  'vja2': 'Act@VJA2',
+  'vja3': 'Act@VJA3',
+  'vja4': 'Act@VJA4',
   
   // Nellore users
-  'nel_user1': 'nellore1',
-  'nel_user2': 'nellore2',
-  'nel_user3': 'nellore3',
-  'nel_user4': 'nellore4',
+  'nel1': 'Act@NEL1',
+  'nel2': 'Act@NEL2',
+  'nel3': 'Act@NEL3',
+  'nel4': 'Act@NEL4',
   
   // Visakhapatnam users
-  'vsk_user1': 'visakhapatnam1',
-  'vsk_user2': 'visakhapatnam2',
-  'vsk_user3': 'visakhapatnam3',
-  'vsk_user4': 'visakhapatnam4',
+  'vsk1': 'Act@VSK1',
+  'vsk2': 'Act@VSK2',
+  'vsk3': 'Act@VSK3',
+  'vsk4': 'Act@VSK4',
   
   // Admin user
-  'admin': 'admin123'
+  'Rafeeq': 'Source@826459'
 };
 
 console.log('Generated SHA-256 hashes:');

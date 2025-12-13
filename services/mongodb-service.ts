@@ -46,6 +46,17 @@ export function getApiKey(): string {
 }
 
 /**
+ * Reset backend settings to defaults (clears localStorage)
+ */
+export function resetBackendSettings(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(STORAGE_KEY_API_URL);
+  localStorage.removeItem(STORAGE_KEY_SOCKET_URL);
+  localStorage.removeItem(STORAGE_KEY_API_KEY);
+  console.log('🔄 Backend settings reset to defaults');
+}
+
+/**
  * Set the backend URL (saves to localStorage)
  * @param url - The new backend URL (e.g., https://abc123.trycloudflare.com)
  */
@@ -55,9 +66,24 @@ export function setBackendUrl(url: string): void {
   // Normalize URL - remove trailing slash
   let normalizedUrl = url.trim().replace(/\/$/, '');
   
+  // Validate URL format
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    console.error('❌ Invalid URL: must start with http:// or https://');
+    return;
+  }
+  
   // If user enters base URL, derive both API and Socket URLs
   const apiUrl = normalizedUrl.endsWith('/api') ? normalizedUrl : `${normalizedUrl}/api`;
   const socketUrl = normalizedUrl.endsWith('/api') ? normalizedUrl.replace('/api', '') : normalizedUrl;
+  
+  // Validate derived URLs
+  try {
+    new URL(apiUrl);
+    new URL(socketUrl);
+  } catch {
+    console.error('❌ Invalid URL format');
+    return;
+  }
   
   localStorage.setItem(STORAGE_KEY_API_URL, apiUrl);
   localStorage.setItem(STORAGE_KEY_SOCKET_URL, socketUrl);
@@ -99,9 +125,28 @@ let currentSocketApiKey: string = '';
 type ConnectionListener = (connected: boolean) => void;
 const connectionListeners: Set<ConnectionListener> = new Set();
 
+// Track active cluster subscriptions to avoid duplicate listeners
+const activeClusterSubscriptions: Map<string, {
+  listeners: Set<{
+    onEmployees: (employees: Employee[]) => void;
+    onAttendance: (attendance: Map<string, AttendanceRecord>) => void;
+  }>;
+  handler: ((data: any) => void) | null;
+}> = new Map();
+
+// Admin subscription tracking
+let adminSubscription: {
+  listeners: Set<{
+    onEmployees: (employees: Employee[]) => void;
+    onAttendance: (attendance: Map<string, AttendanceRecord>) => void;
+  }>;
+  handler: ((data: any) => void) | null;
+} | null = null;
+
 /**
  * Initialize Socket.io connection
  * Will reinitialize if URL or API key has changed
+ * Returns the socket only after it's connected
  */
 async function initializeSocket(): Promise<any> {
   const newSocketUrl = getSocketUrl();
@@ -115,7 +160,21 @@ async function initializeSocket(): Promise<any> {
     isConnected = false;
   }
   
-  if (socket) return socket;
+  // Return existing connected socket
+  if (socket && socket.connected) return socket;
+  
+  // If socket exists but not connected, wait for connection
+  if (socket) {
+    return new Promise((resolve) => {
+      if (socket.connected) {
+        resolve(socket);
+      } else {
+        socket.once('connect', () => resolve(socket));
+        // Also resolve after a timeout with the socket anyway
+        setTimeout(() => resolve(socket), 5000);
+      }
+    });
+  }
   
   // Store current config
   currentSocketUrl = newSocketUrl;
@@ -160,7 +219,16 @@ async function initializeSocket(): Promise<any> {
     console.error('🔌 Socket error:', error.message);
   });
   
-  return socket;
+  // Wait for connection before returning
+  return new Promise((resolve) => {
+    if (socket.connected) {
+      resolve(socket);
+    } else {
+      socket.once('connect', () => resolve(socket));
+      // Also resolve after a timeout with the socket anyway (for polling fallback)
+      setTimeout(() => resolve(socket), 5000);
+    }
+  });
 }
 
 /**
@@ -172,7 +240,99 @@ export async function reconnectSocket(): Promise<void> {
     socket = null;
     isConnected = false;
   }
-  await initializeSocket();
+  
+  // Clear all handler references so they get re-registered on new socket
+  activeClusterSubscriptions.forEach((subInfo, cluster) => {
+    subInfo.handler = null;
+    console.log(`🔄 Cleared handler for cluster ${cluster} - will re-register on reconnect`);
+  });
+  
+  // Clear admin subscription handler too
+  if (adminSubscription) {
+    adminSubscription.handler = null;
+    console.log(`🔄 Cleared admin subscription handler - will re-register on reconnect`);
+  }
+  
+  // Initialize new socket
+  const newSocket = await initializeSocket();
+  
+  // Wait for socket to connect before re-subscribing
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Socket connection timeout'));
+    }, 10000);
+    
+    if (newSocket.connected) {
+      clearTimeout(timeout);
+      resolve();
+    } else {
+      newSocket.once('connect', () => {
+        clearTimeout(timeout);
+        console.log(`🔌 Socket connected, now re-subscribing...`);
+        resolve();
+      });
+      newSocket.once('connect_error', (err: Error) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    }
+  });
+  
+  // Re-subscribe all active cluster subscriptions
+  activeClusterSubscriptions.forEach((subInfo, cluster) => {
+    if (subInfo.listeners.size > 0) {
+      console.log(`🔄 Re-subscribing to cluster: ${cluster} with ${subInfo.listeners.size} listeners`);
+      
+      // Join cluster room
+      newSocket.emit('subscribeToCluster', cluster);
+      
+      // Create new handler
+      const handleAttendanceUpdate = (data: {
+        empId: string;
+        attendance?: any;
+        record?: any;
+        cluster?: string;
+      }) => {
+        console.log(`📡 [MongoDB] Received attendanceUpdated event:`, { 
+          empId: data.empId, 
+          cluster: data.cluster,
+          myCluster: cluster,
+          hasAttendance: !!data.attendance || !!data.record
+        });
+        
+        if (!data.cluster || data.cluster === cluster) {
+          console.log(`📡 [MongoDB] ✅ Cluster match! Refreshing attendance...`);
+          firestoreTracker.trackListenerUpdate('attendance', 1, 'socket');
+          fetchClusterAttendance(cluster, true).then(attendanceMap => {
+            subInfo.listeners.forEach(l => l.onAttendance(attendanceMap));
+          });
+        }
+      };
+      
+      newSocket.on('attendanceUpdated', handleAttendanceUpdate);
+      subInfo.handler = handleAttendanceUpdate;
+    }
+  });
+  
+  // Re-subscribe admin if active
+  if (adminSubscription && adminSubscription.listeners.size > 0) {
+    console.log(`🔄 Re-subscribing admin with ${adminSubscription.listeners.size} listeners`);
+    
+    newSocket.emit('subscribeToAdmin');
+    
+    const handleAdminUpdate = (data: any) => {
+      console.log(`📡 [MongoDB] Admin received attendanceUpdated event:`, data);
+      firestoreTracker.trackListenerUpdate('attendance', 1, 'socket');
+      fetchAllAttendance(true).then(attendanceMap => {
+        adminSubscription?.listeners.forEach(l => l.onAttendance(attendanceMap));
+      });
+    };
+    
+    newSocket.on('attendanceUpdated', handleAdminUpdate);
+    adminSubscription.handler = handleAdminUpdate;
+  }
+  
+  console.log(`🔌 Socket reconnected and all subscriptions re-established`);
 }
 
 /**
@@ -598,15 +758,6 @@ export async function saveAttendanceRecord(
 // REAL-TIME SUBSCRIPTIONS
 // ============================================================================
 
-// Track active cluster subscriptions to avoid duplicate listeners
-const activeClusterSubscriptions: Map<string, {
-  listeners: Set<{
-    onEmployees: (employees: Employee[]) => void;
-    onAttendance: (attendance: Map<string, AttendanceRecord>) => void;
-  }>;
-  handler: ((data: any) => void) | null;
-}> = new Map();
-
 /**
  * Subscribe to cluster updates (employees + attendance)
  */
@@ -718,14 +869,6 @@ export function subscribeToCluster(
  * Subscribe to all updates (for admin)
  * Uses singleton pattern to avoid duplicate listeners
  */
-let adminSubscription: {
-  listeners: Set<{
-    onEmployees: (employees: Employee[]) => void;
-    onAttendance: (attendance: Map<string, AttendanceRecord>) => void;
-  }>;
-  handler: ((data: any) => void) | null;
-} | null = null;
-
 export function subscribeToAll(
   onEmployees: (employees: Employee[]) => void,
   onAttendance: (attendance: Map<string, AttendanceRecord>) => void

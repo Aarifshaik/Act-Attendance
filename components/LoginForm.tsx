@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, LogIn, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import Footer from '@/components/Footer';
 
 // Form validation schema
 const loginSchema = z.object({
@@ -170,6 +171,7 @@ export default function LoginForm() {
           </div>
         </CardContent>
       </Card>
+      <Footer />
     </div>
   );
 }

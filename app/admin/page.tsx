@@ -3,6 +3,7 @@
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AdminDashboard from '@/components/AdminDashboard';
 import Navigation from '@/components/Navigation';
+import Footer from '@/components/Footer';
 
 function AdminContent() {
   return (
@@ -14,6 +15,7 @@ function AdminContent() {
         {/* Admin Dashboard Content */}
         <AdminDashboard />
       </div>
+      <Footer />
     </main>
   );
 }
