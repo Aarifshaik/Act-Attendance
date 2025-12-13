@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Users, Baby, Clock, CheckCircle, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { User, Users, Baby, Clock, CheckCircle, AlertCircle, AlertTriangle, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 // Using MongoDB service instead of Firestore
 // import { firestoreService } from '@/services/firestore-service';
 import { firestoreService } from '@/services/mongodb-wrapper';
-import { EmployeeWithAttendance, AttendanceRecord } from '@/types/attendance';
+import { EmployeeWithAttendance, AttendanceRecord, OtherPerson } from '@/types/attendance';
 import { useToast } from '@/hooks/use-toast';
 import { useErrorHandler, isRetryableError } from '@/hooks/use-error-handler';
 import { ModalSkeleton } from '@/components/ui/skeleton-loader';
@@ -74,6 +74,9 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
     kid2: '',
     kid3: '',
   });
+
+  // Others state - for additional family members (always ineligible)
+  const [others, setOthers] = useState<OtherPerson[]>([]);
   
   const [isSaving, setIsSaving] = useState(false);
   const [previewTime, setPreviewTime] = useState<Date>(new Date());
@@ -112,6 +115,9 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
           kid2: employee.attendanceRecord.kidNames?.kid2 || employee.kids?.[1]?.name || '',
           kid3: employee.attendanceRecord.kidNames?.kid3 || employee.kids?.[2]?.name || '',
         });
+
+        // Set others from attendance record
+        setOthers(employee.attendanceRecord.others || []);
       } else {
         // Reset to defaults for new attendance
         setAttendance({
@@ -128,6 +134,9 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
           kid2: employee.kids?.[1]?.name || '',
           kid3: employee.kids?.[2]?.name || '',
         });
+
+        // Reset others
+        setOthers([]);
       }
     }
   }, [employee]);
@@ -144,6 +153,29 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
       ...prev,
       [kidKey]: name
     }));
+    
+    // If name is cleared, also uncheck the attendance toggle
+    if (!name.trim()) {
+      setAttendance(prev => ({
+        ...prev,
+        [kidKey]: false
+      }));
+    }
+  };
+
+  // Others handlers
+  const handleAddOther = () => {
+    setOthers(prev => [...prev, { name: '', relation: '' }]);
+  };
+
+  const handleRemoveOther = (index: number) => {
+    setOthers(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleOtherChange = (index: number, field: 'name' | 'relation', value: string) => {
+    setOthers(prev => prev.map((other, i) => 
+      i === index ? { ...other, [field]: value } : other
+    ));
   };
 
   const handleSave = async () => {
@@ -159,11 +191,31 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
         throw new Error('Employee ID is required');
       }
 
-      // Validate at least one person is marked present
-      const presentCount = Object.values(attendance).filter(Boolean).length;
+      // Validate at least one person is marked present (including others)
+      const presentCount = Object.values(attendance).filter(Boolean).length + others.filter(o => o.name.trim()).length;
       if (presentCount === 0) {
         throw new Error('Please mark at least one family member as present');
       }
+
+      // Validate kid names are required when marked present
+      if (attendance.kid1 && !kidNames.kid1?.trim()) {
+        throw new Error('Please enter name for Kid 1');
+      }
+      if (attendance.kid2 && !kidNames.kid2?.trim()) {
+        throw new Error('Please enter name for Kid 2');
+      }
+      if (attendance.kid3 && !kidNames.kid3?.trim()) {
+        throw new Error('Please enter name for Kid 3');
+      }
+
+      // Validate others - name is required for each entry
+      const invalidOthers = others.filter(o => o.name.trim() === '' && o.relation.trim() !== '');
+      if (invalidOthers.length > 0) {
+        throw new Error('Please enter name for all Others entries');
+      }
+
+      // Filter out completely empty others
+      const validOthers = others.filter(o => o.name.trim());
 
       // Prepare attendance record
       const attendanceRecord: Omit<AttendanceRecord, 'markedAt'> = {
@@ -177,7 +229,8 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
           kid1: kidNames.kid1 || undefined,
           kid2: kidNames.kid2 || undefined,
           kid3: kidNames.kid3 || undefined,
-        }
+        },
+        others: validOthers
       };
 
       // Save attendance record to Firestore
@@ -223,6 +276,7 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
       if (attendance.kid1) familyMembers.push(kidNames.kid1 || 'Child 1');
       if (attendance.kid2) familyMembers.push(kidNames.kid2 || 'Child 2');
       if (attendance.kid3) familyMembers.push(kidNames.kid3 || 'Child 3');
+      validOthers.forEach(o => familyMembers.push(o.name || 'Other'));
 
       toast({
         title: "Attendance Saved Successfully",
@@ -261,13 +315,15 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
 
   const isEditing = employee?.attendanceRecord !== undefined;
   const buttonText = isEditing ? 'Save Changes' : 'Mark Attendance';
-  const presentCount = Object.values(attendance).filter(Boolean).length;
+  const basePresentCount = Object.values(attendance).filter(Boolean).length;
+  const othersCount = others.filter(o => o.name.trim()).length;
+  const presentCount = basePresentCount + othersCount;
 
   if (!employee) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-2">
           <DialogTitle className="flex items-center space-x-2">
             <User className="h-5 w-5 text-blue-600" />
@@ -301,11 +357,13 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
                   </div>
                   <div>
                     <span className="text-xs font-medium text-gray-500">Eligibility</span>
-                    <p className="text-gray-900 font-medium">{employee.eligibility || 'N/A'}</p>
+                    <p className={`font-medium ${employee.eligibility === 'Eligible' ? 'text-green-600' : 'text-red-600'}`}>
+                      {employee.eligibility || 'Not Eligible'}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium text-gray-500">Eligible Children</span>
-                    <p className="text-gray-900 font-medium">{employee.eligibleChildrenCount || 0}</p>
+                    <span className="text-xs font-medium text-gray-500">Expected Count</span>
+                    <p className="text-gray-900 font-medium">{employee.expectedCount || 0}</p>
                   </div>
                 </div>
               </CardContent>
@@ -421,30 +479,97 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
               />
             </div>
 
-            {/* Children Toggles - Compact */}
-            {(['kid1', 'kid2', 'kid3'] as const).map((kidKey, index) => (
-              <div
-                key={kidKey}
-                className="p-2 border rounded-lg bg-gray-50 space-y-1"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
+            {/* Children Toggles - Name required before toggle */}
+            {(['kid1', 'kid2', 'kid3'] as const).map((kidKey, index) => {
+              const hasName = kidNames[kidKey]?.trim().length > 0;
+              return (
+                <div
+                  key={kidKey}
+                  className={`p-2 border rounded-lg space-y-1 ${hasName ? 'bg-gray-50' : 'bg-gray-100'}`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
                     <Baby className="h-4 w-4 text-green-600" />
                     <p className="font-medium text-gray-900 text-sm">Child {index + 1}</p>
+                    {!hasName && (
+                      <span className="text-xs text-orange-500">(Enter name to mark)</span>
+                    )}
                   </div>
-                  <Switch
-                    checked={attendance[kidKey]}
-                    onCheckedChange={(checked) => handleAttendanceChange(kidKey, checked)}
-                  />
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      placeholder={`Child ${index + 1} name...`}
+                      value={kidNames[kidKey]}
+                      onChange={(e) => handleKidNameChange(kidKey, e.target.value)}
+                      className="text-xs h-7 flex-1"
+                    />
+                    <Switch
+                      checked={attendance[kidKey]}
+                      onCheckedChange={(checked) => handleAttendanceChange(kidKey, checked)}
+                      disabled={!hasName}
+                      className={!hasName ? 'opacity-50' : ''}
+                    />
+                  </div>
                 </div>
-                <Input
-                  placeholder={`Child ${index + 1} name...`}
-                  value={kidNames[kidKey]}
-                  onChange={(e) => handleKidNameChange(kidKey, e.target.value)}
-                  className="text-xs h-7"
-                />
+              );
+            })}
+
+            {/* Others Section - Additional family members (always ineligible) */}
+            <div className="border-t pt-2 mt-2">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-gray-700 flex items-center space-x-2">
+                  <Users className="h-4 w-4 text-orange-600" />
+                  <span>Others (Ineligible)</span>
+                </h4>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddOther}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
               </div>
-            ))}
+              
+              {others.length === 0 && (
+                <p className="text-xs text-gray-500 italic">No others added</p>
+              )}
+              
+              {others.map((other, index) => {
+                const hasName = other.name?.trim().length > 0;
+                return (
+                  <div key={index} className={`flex items-center space-x-2 mb-2 p-2 rounded-lg ${hasName ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${hasName ? 'bg-green-500' : 'bg-gray-300'}`}>
+                      {hasName && <CheckCircle className="h-3 w-3 text-white" />}
+                    </div>
+                    <Input
+                      placeholder="Name (required)..."
+                      value={other.name}
+                      onChange={(e) => handleOtherChange(index, 'name', e.target.value)}
+                      className={`text-xs h-7 flex-1 ${!hasName ? 'border-orange-300' : ''}`}
+                    />
+                    <Input
+                      placeholder="Relation..."
+                      value={other.relation}
+                      onChange={(e) => handleOtherChange(index, 'relation', e.target.value)}
+                      className="text-xs h-7 w-24"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveOther(index)}
+                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                );
+              })}
+              {others.length > 0 && others.some(o => !o.name?.trim()) && (
+                <p className="text-xs text-orange-500 mt-1">⚠️ Enter name for all others to count them</p>
+              )}
+            </div>
           </div>
         </div>
 

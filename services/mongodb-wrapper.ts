@@ -149,10 +149,12 @@ export class MongoDBService {
     const stats = await mongodbApi.getClusterStats();
     return stats.map(s => ({
       cluster: s.cluster,
-      totalMembers: s.totalEmployees,
-      presentCount: s.attendedCount,
-      pendingCount: s.totalEmployees - s.attendedCount,
-      headCount: (s as any).headCount || 0
+      totalEmployees: s.totalEmployees,
+      totalExpectedCount: s.totalExpectedCount || 0,
+      presentHeadCount: s.presentHeadCount || s.attendedCount || 0,
+      ineligibleHeadCount: s.ineligibleHeadCount || 0,
+      eligibleBreakdown: s.eligibleBreakdown || { employee: 0, spouse: 0, kids: 0, others: 0 },
+      ineligibleBreakdown: s.ineligibleBreakdown || { employee: 0, spouse: 0, kids: 0, others: 0 }
     }));
   }
 

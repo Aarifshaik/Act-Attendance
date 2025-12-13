@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Users, UserCheck, Clock, Filter, AlertTriangle, RefreshCw, CloudOff, Cloud, Trash2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, Users, UserCheck, Clock, Filter, AlertTriangle, RefreshCw, CloudOff, Cloud, Trash2, ArrowUpDown, ArrowUp, ArrowDown, UserX } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { firestoreService } from '@/services/mongodb-wrapper';
 import { cacheService } from '@/services/cache-service';
 import { EmployeeWithAttendance } from '@/types/attendance';
-import { filterEmployeesBySearch, getAttendanceStatusSummary } from '@/utils/cluster-utils';
+import { filterEmployeesBySearch, getAttendanceStatusSummary, calculateDetailedStats, DetailedAttendanceStats } from '@/utils/cluster-utils';
 import { useErrorHandler, isRetryableError } from '@/hooks/use-error-handler';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -319,18 +319,16 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
     });
   }, [employees, searchTerm, sortField, sortDirection]);
 
-  // Calculate stats
+  // Calculate detailed stats
   const stats = useMemo(() => {
-    const total = employees.length;
-    let headCount = 0;
-    const present = employees.filter(emp => {
-      const summary = getAttendanceStatusSummary(emp);
-      headCount += summary.presentCount; // Add all present family members
-      return summary.status === 'present';
-    }).length;
-    const pending = total - present;
-
-    return { total, present, pending, headCount };
+    const detailedStats = calculateDetailedStats(employees);
+    return {
+      totalExpectedCount: detailedStats.totalExpectedCount,
+      totalPresentHeadCount: detailedStats.totalPresentHeadCount,
+      totalIneligibleHeadCount: detailedStats.totalIneligibleHeadCount,
+      eligibleBreakdown: detailedStats.eligibleBreakdown,
+      ineligibleBreakdown: detailedStats.ineligibleBreakdown
+    };
   }, [employees]);
 
   const getStatusIcon = (employee: EmployeeWithAttendance) => {
@@ -582,23 +580,54 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
               )}
             </div>
             <div className="flex items-center space-x-4">
-              <Badge variant="outline" className="text-sm">
+              <Badge variant="outline" className="text-sm text-blue-700 border-blue-200">
                 <Users className="h-4 w-4 mr-1" />
-                {stats.total} Employees
+                {stats.totalExpectedCount} Expected
               </Badge>
               <Badge variant="outline" className="text-sm text-green-700 border-green-200">
                 <UserCheck className="h-4 w-4 mr-1" />
-                {stats.present} Present
+                {stats.totalPresentHeadCount} Present
               </Badge>
-              <Badge variant="outline" className="text-sm text-gray-600 border-gray-200">
-                <Clock className="h-4 w-4 mr-1" />
-                {stats.pending} Pending
-              </Badge>
-              <Badge variant="outline" className="text-sm text-blue-700 border-blue-200 bg-blue-50">
-                <Users className="h-4 w-4 mr-1" />
-                {stats.headCount} Head Count
+              <Badge variant="outline" className="text-sm text-red-600 border-red-200">
+                <UserX className="h-4 w-4 mr-1" />
+                {stats.totalIneligibleHeadCount} Ineligible
               </Badge>
             </div>
+          </div>
+
+          {/* Detailed Stats Table */}
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1 px-2"></th>
+                  <th className="text-center py-1 px-2 text-green-700">Eligible</th>
+                  <th className="text-center py-1 px-2 text-red-600">Not Eligible</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="py-1 px-2 font-medium">Employee</td>
+                  <td className="text-center py-1 px-2">{stats.eligibleBreakdown.employee}</td>
+                  <td className="text-center py-1 px-2">{stats.ineligibleBreakdown.employee}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 px-2 font-medium">Spouse</td>
+                  <td className="text-center py-1 px-2">{stats.eligibleBreakdown.spouse}</td>
+                  <td className="text-center py-1 px-2">{stats.ineligibleBreakdown.spouse}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 px-2 font-medium">Kids</td>
+                  <td className="text-center py-1 px-2">{stats.eligibleBreakdown.kids}</td>
+                  <td className="text-center py-1 px-2">{stats.ineligibleBreakdown.kids}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 px-2 font-medium">Others</td>
+                  <td className="text-center py-1 px-2">0</td>
+                  <td className="text-center py-1 px-2">{stats.ineligibleBreakdown.others}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* Search Bar */}
@@ -744,12 +773,11 @@ function KioskInterfaceContent({}: KioskInterfaceProps) {
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">
                           <div className="flex flex-col">
-                            <span>{employee.eligibility || 'Not specified'}</span>
+                            <span className={employee.eligibility === 'Eligible' ? 'text-green-600' : 'text-red-600'}>
+                              {employee.eligibility || 'Not Eligible'}
+                            </span>
                             <span className="text-xs text-gray-400">
-                              {employee.eligibleChildrenCount > 0 
-                                ? `${employee.eligibleChildrenCount} eligible children`
-                                : 'No eligible children'
-                              }
+                              Expected: {employee.expectedCount || 0}
                             </span>
                           </div>
                         </td>

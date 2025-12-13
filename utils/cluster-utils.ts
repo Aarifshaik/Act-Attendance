@@ -1,4 +1,4 @@
-import { Employee, AttendanceRecord, EmployeeWithAttendance, ClusterStats } from '@/types/attendance';
+import { Employee, AttendanceRecord, EmployeeWithAttendance, ClusterStats, OtherPerson } from '@/types/attendance';
 
 export type ClusterType = 'Vijayawada' | 'Nellore' | 'Visakhapatnam';
 
@@ -41,6 +41,109 @@ export function groupEmployeesByCluster(employees: Employee[]): Record<ClusterTy
 }
 
 /**
+ * Check if employee is eligible
+ */
+export function isEmployeeEligible(employee: Employee): boolean {
+  return employee.eligibility?.toLowerCase() === 'eligible';
+}
+
+/**
+ * Calculate detailed attendance breakdown for stats
+ */
+export interface DetailedAttendanceStats {
+  totalExpectedCount: number;      // Sum of expectedCount for eligible employees
+  totalPresentHeadCount: number;   // Total present people (all)
+  totalIneligibleHeadCount: number; // Total ineligible people present
+  eligibleBreakdown: {
+    employee: number;
+    spouse: number;
+    kids: number;
+    others: number;  // Always 0
+  };
+  ineligibleBreakdown: {
+    employee: number;
+    spouse: number;
+    kids: number;
+    others: number;
+  };
+}
+
+/**
+ * Calculate detailed stats for employees
+ */
+export function calculateDetailedStats(employees: EmployeeWithAttendance[]): DetailedAttendanceStats {
+  const stats: DetailedAttendanceStats = {
+    totalExpectedCount: 0,
+    totalPresentHeadCount: 0,
+    totalIneligibleHeadCount: 0,
+    eligibleBreakdown: { employee: 0, spouse: 0, kids: 0, others: 0 },
+    ineligibleBreakdown: { employee: 0, spouse: 0, kids: 0, others: 0 }
+  };
+
+  employees.forEach(emp => {
+    const isEligible = isEmployeeEligible(emp);
+    const expectedCount = emp.expectedCount || 0;
+    
+    // Add to total expected count only for eligible employees
+    if (isEligible) {
+      stats.totalExpectedCount += expectedCount;
+    }
+
+    if (emp.attendanceRecord) {
+      const record = emp.attendanceRecord;
+      let eligibleCountUsed = 0;
+      
+      // Employee attendance
+      if (record.employee) {
+        stats.totalPresentHeadCount++;
+        if (isEligible && eligibleCountUsed < expectedCount) {
+          stats.eligibleBreakdown.employee++;
+          eligibleCountUsed++;
+        } else {
+          stats.ineligibleBreakdown.employee++;
+          stats.totalIneligibleHeadCount++;
+        }
+      }
+
+      // Spouse attendance
+      if (record.spouse) {
+        stats.totalPresentHeadCount++;
+        if (isEligible && eligibleCountUsed < expectedCount) {
+          stats.eligibleBreakdown.spouse++;
+          eligibleCountUsed++;
+        } else {
+          stats.ineligibleBreakdown.spouse++;
+          stats.totalIneligibleHeadCount++;
+        }
+      }
+
+      // Kids attendance
+      const kidFields: ('kid1' | 'kid2' | 'kid3')[] = ['kid1', 'kid2', 'kid3'];
+      kidFields.forEach(kidField => {
+        if (record[kidField]) {
+          stats.totalPresentHeadCount++;
+          if (isEligible && eligibleCountUsed < expectedCount) {
+            stats.eligibleBreakdown.kids++;
+            eligibleCountUsed++;
+          } else {
+            stats.ineligibleBreakdown.kids++;
+            stats.totalIneligibleHeadCount++;
+          }
+        }
+      });
+
+      // Others attendance (always ineligible)
+      const othersCount = record.others?.length || 0;
+      stats.totalPresentHeadCount += othersCount;
+      stats.ineligibleBreakdown.others += othersCount;
+      stats.totalIneligibleHeadCount += othersCount;
+    }
+  });
+
+  return stats;
+}
+
+/**
  * Calculate attendance statistics for a cluster
  */
 export function calculateClusterAttendanceStats(employees: EmployeeWithAttendance[]): {
@@ -68,7 +171,8 @@ export function calculateClusterAttendanceStats(employees: EmployeeWithAttendanc
  * Check if an attendance record has any family member marked as present
  */
 export function hasAnyAttendance(record: AttendanceRecord): boolean {
-  return record.employee || record.spouse || record.kid1 || record.kid2 || record.kid3;
+  return !!(record.employee || record.spouse || record.kid1 || record.kid2 || record.kid3 || 
+         (record.others && record.others.length > 0));
 }
 
 /**
@@ -81,6 +185,7 @@ export function countPresentMembers(record: AttendanceRecord): number {
   if (record.kid1) count++;
   if (record.kid2) count++;
   if (record.kid3) count++;
+  count += record.others?.length || 0;
   return count;
 }
 
@@ -114,8 +219,8 @@ export function getAttendanceStatusSummary(employee: EmployeeWithAttendance): {
  * Calculate total possible family members for an employee
  */
 export function getTotalPossibleMembers(employee: Employee): number {
-  // Employee + spouse + up to 3 children
-  return 2 + Math.min(employee.kids?.length || 0, 3);
+  // Employee + spouse + up to 3 children (based on expectedCount)
+  return employee.expectedCount || 2;
 }
 
 /**
@@ -162,7 +267,7 @@ export function filterEmployeesBySearch(employees: Employee[], searchTerm: strin
 }
 
 /**
- * Create cluster statistics summary
+ * Create cluster statistics summary with new detailed stats
  */
 export function createClusterStatsSummary(employees: EmployeeWithAttendance[]): ClusterStats[] {
   // Group employees by cluster (using EmployeeWithAttendance type)
@@ -180,22 +285,16 @@ export function createClusterStatsSummary(employees: EmployeeWithAttendance[]): 
   
   return CLUSTERS.map(cluster => {
     const clusterEmployees = grouped[cluster];
-    const stats = calculateClusterAttendanceStats(clusterEmployees);
-    
-    // Calculate head count
-    let headCount = 0;
-    clusterEmployees.forEach(emp => {
-      if (emp.attendanceRecord) {
-        headCount += countPresentMembers(emp.attendanceRecord);
-      }
-    });
+    const detailedStats = calculateDetailedStats(clusterEmployees);
     
     return {
       cluster,
-      totalMembers: stats.totalEmployees,
-      presentCount: stats.presentEmployees,
-      pendingCount: stats.pendingEmployees,
-      headCount
+      totalEmployees: clusterEmployees.length,
+      totalExpectedCount: detailedStats.totalExpectedCount,
+      presentHeadCount: detailedStats.totalPresentHeadCount,
+      ineligibleHeadCount: detailedStats.totalIneligibleHeadCount,
+      eligibleBreakdown: detailedStats.eligibleBreakdown,
+      ineligibleBreakdown: detailedStats.ineligibleBreakdown
     };
   });
 }

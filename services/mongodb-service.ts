@@ -741,6 +741,11 @@ export async function saveAttendanceRecord(
     });
   }
   
+  // Clean others array - filter out empty entries
+  const cleanOthers = Array.isArray(data.others)
+    ? data.others.filter(o => o && o.name && o.name.trim())
+    : [];
+  
   await fetchAPI(`/attendance/${encodeURIComponent(empId)}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -750,6 +755,7 @@ export async function saveAttendanceRecord(
       kid2: data.kid2 || false,
       kid3: data.kid3 || false,
       kidNames: cleanKidNames,
+      others: cleanOthers,
       markedBy: data.markedBy || 'Kiosk',
       cluster: cluster || 'Unknown' // Include cluster for socket broadcast
     })
@@ -974,6 +980,21 @@ interface ClusterStat {
   totalEmployees: number;
   attendedCount: number;
   headCount?: number;
+  totalExpectedCount?: number;
+  presentHeadCount?: number;
+  ineligibleHeadCount?: number;
+  eligibleBreakdown?: {
+    employee: number;
+    spouse: number;
+    kids: number;
+    others: number;
+  };
+  ineligibleBreakdown?: {
+    employee: number;
+    spouse: number;
+    kids: number;
+    others: number;
+  };
 }
 
 interface OverviewStat {

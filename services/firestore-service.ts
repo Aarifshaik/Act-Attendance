@@ -59,7 +59,8 @@ export class FirestoreService {
             name: data.name || 'Unknown Employee',
             cluster: data.cluster || 'Unknown',
             eligibility: data.eligibility || 'Not Specified',
-            eligibleChildrenCount: data.eligibleChildrenCount || 0,
+            expectedCount: data.expectedCount || data.eligibleChildrenCount || 0,
+            others: data.others || '',
             kids: Array.isArray(data.kids) ? data.kids : [],
           } as Employee;
         });
@@ -115,7 +116,8 @@ export class FirestoreService {
             name: data.name || 'Unknown Employee',
             cluster: data.cluster || cluster,
             eligibility: data.eligibility || 'Not Specified',
-            eligibleChildrenCount: data.eligibleChildrenCount || 0,
+            expectedCount: data.expectedCount || data.eligibleChildrenCount || 0,
+            others: data.others || '',
             kids: Array.isArray(data.kids) ? data.kids : [],
           } as Employee;
         });
@@ -153,7 +155,8 @@ export class FirestoreService {
             name: data.name || 'Unknown Employee',
             cluster: data.cluster || 'Unknown',
             eligibility: data.eligibility || 'Not Specified',
-            eligibleChildrenCount: data.eligibleChildrenCount || 0,
+            expectedCount: data.expectedCount || data.eligibleChildrenCount || 0,
+            others: data.others || '',
             kids: Array.isArray(data.kids) ? data.kids : [],
           } as Employee;
         }
@@ -514,7 +517,8 @@ export class FirestoreService {
               name: data.name || 'Unknown Employee',
               cluster: data.cluster || cluster,
               eligibility: data.eligibility || 'Not Specified',
-              eligibleChildrenCount: data.eligibleChildrenCount || 0,
+              expectedCount: data.expectedCount || data.eligibleChildrenCount || 0,
+              others: data.others || '',
               kids: Array.isArray(data.kids) ? data.kids : [],
             } as Employee;
           });
@@ -557,7 +561,8 @@ export class FirestoreService {
               name: data.name || 'Unknown Employee',
               cluster: data.cluster || 'Unknown',
               eligibility: data.eligibility || 'Not Specified',
-              eligibleChildrenCount: data.eligibleChildrenCount || 0,
+              expectedCount: data.expectedCount || data.eligibleChildrenCount || 0,
+              others: data.others || '',
               kids: Array.isArray(data.kids) ? data.kids : [],
             } as Employee;
           });
@@ -670,32 +675,62 @@ export class FirestoreService {
       for (const cluster of clusters) {
         const employees = await this.getEmployeesWithAttendanceByCluster(cluster);
         
-        const totalMembers = employees.length;
-        let headCount = 0;
-        const presentCount = employees.filter(emp => {
+        const totalEmployees = employees.length;
+        let totalExpectedCount = 0;
+        let presentHeadCount = 0;
+        let ineligibleHeadCount = 0;
+        
+        const eligibleBreakdown = { employee: 0, spouse: 0, kids: 0, others: 0 };
+        const ineligibleBreakdown = { employee: 0, spouse: 0, kids: 0, others: 0 };
+        
+        employees.forEach(emp => {
+          const isEligible = emp.eligibility === 'Eligible';
+          totalExpectedCount += emp.expectedCount || 0;
+          
           if (emp.attendanceRecord) {
-            if (emp.attendanceRecord.employee) headCount++;
-            if (emp.attendanceRecord.spouse) headCount++;
-            if (emp.attendanceRecord.kid1) headCount++;
-            if (emp.attendanceRecord.kid2) headCount++;
-            if (emp.attendanceRecord.kid3) headCount++;
+            const att = emp.attendanceRecord;
             
-            return emp.attendanceRecord.employee || 
-              emp.attendanceRecord.spouse || 
-              emp.attendanceRecord.kid1 || 
-              emp.attendanceRecord.kid2 || 
-              emp.attendanceRecord.kid3;
+            // Employee attendance
+            if (att.employee) {
+              presentHeadCount++;
+              if (isEligible) eligibleBreakdown.employee++;
+              else ineligibleBreakdown.employee++;
+              if (!isEligible) ineligibleHeadCount++;
+            }
+            
+            // Spouse attendance
+            if (att.spouse) {
+              presentHeadCount++;
+              if (isEligible) eligibleBreakdown.spouse++;
+              else ineligibleBreakdown.spouse++;
+              if (!isEligible) ineligibleHeadCount++;
+            }
+            
+            // Kids attendance
+            const kidsPresent = (att.kid1 ? 1 : 0) + (att.kid2 ? 1 : 0) + (att.kid3 ? 1 : 0);
+            presentHeadCount += kidsPresent;
+            if (isEligible) eligibleBreakdown.kids += kidsPresent;
+            else {
+              ineligibleBreakdown.kids += kidsPresent;
+              ineligibleHeadCount += kidsPresent;
+            }
+            
+            // Others attendance (always ineligible)
+            const othersCount = att.others?.length || 0;
+            presentHeadCount += othersCount;
+            ineligibleBreakdown.others += othersCount;
+            ineligibleHeadCount += othersCount;
           }
-          return false;
-        }).length;
-        const pendingCount = totalMembers - presentCount;
+        });
 
         stats.push({
           cluster,
-          totalMembers,
-          presentCount,
-          pendingCount,
-          headCount
+          totalEmployees,
+          totalExpectedCount,
+          presentHeadCount,
+          ineligibleHeadCount,
+          eligibleBreakdown,
+          ineligibleBreakdown
         });
       }
 

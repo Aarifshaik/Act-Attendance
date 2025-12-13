@@ -20,7 +20,8 @@ import {
   Trash2,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  UserX
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,7 @@ import {
 import { firestoreService } from '@/services/mongodb-wrapper';
 import { cacheService } from '@/services/cache-service';
 import { EmployeeWithAttendance, ClusterStats, AttendanceRecord } from '@/types/attendance';
+import { calculateDetailedStats, DetailedAttendanceStats } from '@/utils/cluster-utils';
 import { useErrorHandler, isRetryableError } from '@/hooks/use-error-handler';
 import { DashboardSkeleton } from '@/components/ui/skeleton-loader';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -72,10 +74,6 @@ const AnimatedCounter = ({ value }: { value: number }) => {
 
 // Cluster Statistics Card Component
 const ClusterStatsCard = ({ stats }: { stats: ClusterStats }) => {
-  const attendanceRate = stats.totalMembers > 0 
-    ? Math.round((stats.presentCount / stats.totalMembers) * 100) 
-    : 0;
-
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -106,20 +104,17 @@ const ClusterStatsCard = ({ stats }: { stats: ClusterStats }) => {
               <MapPin className="mr-2 h-5 w-5 text-blue-600" />
               <span className="text-lg font-semibold">{stats.cluster}</span>
             </div>
-            <Badge variant="outline" className="text-sm">
-              {attendanceRate}% Present
-            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div className="text-center">
               <div className="flex flex-col items-center mb-1">
-                <Users className="h-4 w-4 text-gray-600" />
-                <span className="text-xs text-gray-600">Total</span>
+                <Users className="h-4 w-4 text-blue-600" />
+                <span className="text-xs text-blue-600">Expected</span>
               </div>
-              <div className="text-xl font-bold text-gray-900">
-                <AnimatedCounter value={stats.totalMembers} />
+              <div className="text-xl font-bold text-blue-600">
+                <AnimatedCounter value={stats.totalExpectedCount} />
               </div>
             </div>
             <div className="text-center">
@@ -128,38 +123,52 @@ const ClusterStatsCard = ({ stats }: { stats: ClusterStats }) => {
                 <span className="text-xs text-green-600">Present</span>
               </div>
               <div className="text-xl font-bold text-green-600">
-                <AnimatedCounter value={stats.presentCount} />
+                <AnimatedCounter value={stats.presentHeadCount} />
               </div>
             </div>
             <div className="text-center">
               <div className="flex flex-col items-center mb-1">
-                <Clock className="h-4 w-4 text-orange-600" />
-                <span className="text-xs text-orange-600">Pending</span>
+                <UserX className="h-4 w-4 text-red-600" />
+                <span className="text-xs text-red-600">Ineligible</span>
               </div>
-              <div className="text-xl font-bold text-orange-600">
-                <AnimatedCounter value={stats.pendingCount} />
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="flex flex-col items-center mb-1">
-                <Users className="h-4 w-4 text-blue-600" />
-                <span className="text-xs text-blue-600">Heads</span>
-              </div>
-              <div className="text-xl font-bold text-blue-600">
-                <AnimatedCounter value={stats.headCount} />
+              <div className="text-xl font-bold text-red-600">
+                <AnimatedCounter value={stats.ineligibleHeadCount} />
               </div>
             </div>
           </div>
           
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <motion.div
-              className="bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${attendanceRate}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
-            />
-          </div>
+          {/* Breakdown Table */}
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-1"></th>
+                <th className="text-center py-1 text-green-700">Eligible</th>
+                <th className="text-center py-1 text-red-600">Not Eligible</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="py-1 font-medium">Employee</td>
+                <td className="text-center py-1">{stats.eligibleBreakdown.employee}</td>
+                <td className="text-center py-1">{stats.ineligibleBreakdown.employee}</td>
+              </tr>
+              <tr>
+                <td className="py-1 font-medium">Spouse</td>
+                <td className="text-center py-1">{stats.eligibleBreakdown.spouse}</td>
+                <td className="text-center py-1">{stats.ineligibleBreakdown.spouse}</td>
+              </tr>
+              <tr>
+                <td className="py-1 font-medium">Kids</td>
+                <td className="text-center py-1">{stats.eligibleBreakdown.kids}</td>
+                <td className="text-center py-1">{stats.ineligibleBreakdown.kids}</td>
+              </tr>
+              <tr>
+                <td className="py-1 font-medium">Others</td>
+                <td className="text-center py-1">0</td>
+                <td className="text-center py-1">{stats.ineligibleBreakdown.others}</td>
+              </tr>
+            </tbody>
+          </table>
         </CardContent>
       </Card>
     </motion.div>
@@ -173,18 +182,21 @@ const EmployeeRow = ({ employee }: { employee: EmployeeWithAttendance }) => {
     employee.attendanceRecord.spouse ||
     employee.attendanceRecord.kid1 ||
     employee.attendanceRecord.kid2 ||
-    employee.attendanceRecord.kid3
+    employee.attendanceRecord.kid3 ||
+    (employee.attendanceRecord.others && employee.attendanceRecord.others.length > 0)
   );
 
   const getAttendanceCount = (record?: AttendanceRecord): number => {
     if (!record) return 0;
-    return [
+    let count = [
       record.employee,
       record.spouse,
       record.kid1,
       record.kid2,
       record.kid3
     ].filter(Boolean).length;
+    count += record.others?.length || 0;
+    return count;
   };
 
   const attendanceCount = getAttendanceCount(employee.attendanceRecord);
@@ -258,7 +270,7 @@ function AdminDashboardContent() {
   const [clusterFilter, setClusterFilter] = useState<string>('all');
 
   // Helper function to calculate cluster stats from employees
-  const calculateClusterStats = useCallback((employees: EmployeeWithAttendance[]): ClusterStats[] => {
+  const calculateClusterStatsFromEmployees = useCallback((employees: EmployeeWithAttendance[]): ClusterStats[] => {
     const clusterMap = new Map<string, EmployeeWithAttendance[]>();
     
     employees.forEach(emp => {
@@ -270,31 +282,16 @@ function AdminDashboardContent() {
     });
 
     return Array.from(clusterMap.entries()).map(([cluster, emps]) => {
-      let headCount = 0;
-      const presentCount = emps.filter(emp => {
-        if (emp.attendanceRecord) {
-          // Count all present family members for head count
-          if (emp.attendanceRecord.employee) headCount++;
-          if (emp.attendanceRecord.spouse) headCount++;
-          if (emp.attendanceRecord.kid1) headCount++;
-          if (emp.attendanceRecord.kid2) headCount++;
-          if (emp.attendanceRecord.kid3) headCount++;
-          
-          return emp.attendanceRecord.employee ||
-            emp.attendanceRecord.spouse ||
-            emp.attendanceRecord.kid1 ||
-            emp.attendanceRecord.kid2 ||
-            emp.attendanceRecord.kid3;
-        }
-        return false;
-      }).length;
-
+      const detailedStats = calculateDetailedStats(emps);
+      
       return {
         cluster,
-        totalMembers: emps.length,
-        presentCount,
-        pendingCount: emps.length - presentCount,
-        headCount
+        totalEmployees: emps.length,
+        totalExpectedCount: detailedStats.totalExpectedCount,
+        presentHeadCount: detailedStats.totalPresentHeadCount,
+        ineligibleHeadCount: detailedStats.totalIneligibleHeadCount,
+        eligibleBreakdown: detailedStats.eligibleBreakdown,
+        ineligibleBreakdown: detailedStats.ineligibleBreakdown
       };
     });
   }, []);
@@ -317,7 +314,7 @@ function AdminDashboardContent() {
         if (cachedEmployees.length > 0 && !forceSync) {
           console.log(`⚡ CACHE HIT: Showing ${cachedEmployees.length} cached employees immediately`);
           setAllEmployees(cachedEmployees);
-          setClusterStats(calculateClusterStats(cachedEmployees));
+          setClusterStats(calculateClusterStatsFromEmployees(cachedEmployees));
           setLoading(false);
           setIsUsingCache(true);
           if (cachedSyncTime) {
@@ -337,7 +334,7 @@ function AdminDashboardContent() {
             if (isMounted && !forceSync) {
               console.log(`🔄 [SWR] Fresh data received: ${data.length} employees`);
               setAllEmployees(data);
-              setClusterStats(calculateClusterStats(data));
+              setClusterStats(calculateClusterStatsFromEmployees(data));
               setIsUsingCache(false);
               setLastSyncTime(new Date());
               setIsSyncing(false);
@@ -349,7 +346,7 @@ function AdminDashboardContent() {
         if (isMounted && (cachedEmployees.length === 0 || forceSync)) {
           console.log(`☁️ Fresh data: ${employees.length} employees from server`);
           setAllEmployees(employees);
-          setClusterStats(calculateClusterStats(employees));
+          setClusterStats(calculateClusterStatsFromEmployees(employees));
           setIsUsingCache(false);
           setLastSyncTime(new Date());
           await cacheService.setLastSyncTime('admin');
@@ -388,7 +385,7 @@ function AdminDashboardContent() {
               attendanceRecord: existingAttendance.get(emp.empId)
             }));
             // Recalculate stats from updated data
-            setClusterStats(calculateClusterStats(updatedEmployees));
+            setClusterStats(calculateClusterStatsFromEmployees(updatedEmployees));
             return updatedEmployees;
           });
         },
@@ -409,7 +406,7 @@ function AdminDashboardContent() {
             attendanceRecord: attendanceRecords[emp.empId]
           }));
           // Recalculate stats
-          setClusterStats(calculateClusterStats(updatedEmployees));
+          setClusterStats(calculateClusterStatsFromEmployees(updatedEmployees));
           return updatedEmployees;
         });
       });
@@ -435,7 +432,7 @@ function AdminDashboardContent() {
     try {
       const employees = await firestoreService.getAllEmployeesWithAttendance({ useCache: false });
       setAllEmployees(employees);
-      setClusterStats(calculateClusterStats(employees));
+      setClusterStats(calculateClusterStatsFromEmployees(employees));
       setIsUsingCache(false);
       setLastSyncTime(new Date());
       await cacheService.setLastSyncTime('admin');
@@ -445,7 +442,7 @@ function AdminDashboardContent() {
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, handleError, calculateClusterStats]);
+  }, [isSyncing, handleError, calculateClusterStatsFromEmployees]);
 
   // Clear cache function
   const handleClearCache = useCallback(async () => {
@@ -560,30 +557,16 @@ function AdminDashboardContent() {
     });
   }, [allEmployees, searchTerm, clusterFilter, sortField, sortDirection]);
 
-  // Calculate overall statistics
+  // Calculate overall statistics using detailed stats
   const overallStats = useMemo(() => {
-    const totalEmployees = allEmployees.length;
-    let totalHeadCount = 0;
-    const totalPresent = allEmployees.filter(emp => {
-      if (emp.attendanceRecord) {
-        // Count all present family members for head count
-        if (emp.attendanceRecord.employee) totalHeadCount++;
-        if (emp.attendanceRecord.spouse) totalHeadCount++;
-        if (emp.attendanceRecord.kid1) totalHeadCount++;
-        if (emp.attendanceRecord.kid2) totalHeadCount++;
-        if (emp.attendanceRecord.kid3) totalHeadCount++;
-        
-        return emp.attendanceRecord.employee ||
-          emp.attendanceRecord.spouse ||
-          emp.attendanceRecord.kid1 ||
-          emp.attendanceRecord.kid2 ||
-          emp.attendanceRecord.kid3;
-      }
-      return false;
-    }).length;
-    const totalPending = totalEmployees - totalPresent;
-
-    return { totalEmployees, totalPresent, totalPending, totalHeadCount };
+    const detailedStats = calculateDetailedStats(allEmployees);
+    return {
+      totalExpectedCount: detailedStats.totalExpectedCount,
+      totalPresentHeadCount: detailedStats.totalPresentHeadCount,
+      totalIneligibleHeadCount: detailedStats.totalIneligibleHeadCount,
+      eligibleBreakdown: detailedStats.eligibleBreakdown,
+      ineligibleBreakdown: detailedStats.ineligibleBreakdown
+    };
   }, [allEmployees]);
 
   // Retry function
@@ -738,31 +721,60 @@ function AdminDashboardContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-3 gap-6 mb-4">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-gray-900 mb-1">
-                    <AnimatedCounter value={overallStats.totalEmployees} />
+                  <div className="text-3xl font-bold text-blue-600 mb-1">
+                    <AnimatedCounter value={overallStats.totalExpectedCount} />
                   </div>
-                  <p className="text-gray-600">Total Employees</p>
+                  <p className="text-blue-600">Total Expected</p>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-green-600 mb-1">
-                    <AnimatedCounter value={overallStats.totalPresent} />
+                    <AnimatedCounter value={overallStats.totalPresentHeadCount} />
                   </div>
-                  <p className="text-green-600">Present</p>
+                  <p className="text-green-600">Present Head Count</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-orange-600 mb-1">
-                    <AnimatedCounter value={overallStats.totalPending} />
+                  <div className="text-3xl font-bold text-red-600 mb-1">
+                    <AnimatedCounter value={overallStats.totalIneligibleHeadCount} />
                   </div>
-                  <p className="text-orange-600">Pending</p>
+                  <p className="text-red-600">Ineligible Present</p>
                 </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600 mb-1">
-                    <AnimatedCounter value={overallStats.totalHeadCount} />
-                  </div>
-                  <p className="text-blue-600">Total Head Count</p>
-                </div>
+              </div>
+              
+              {/* Breakdown Table */}
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-2"></th>
+                      <th className="text-center py-2 px-4 text-green-700 font-semibold">Eligible</th>
+                      <th className="text-center py-2 px-4 text-red-600 font-semibold">Not Eligible</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="py-2 px-2 font-medium">Employee</td>
+                      <td className="text-center py-2 px-4">{overallStats.eligibleBreakdown.employee}</td>
+                      <td className="text-center py-2 px-4">{overallStats.ineligibleBreakdown.employee}</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 px-2 font-medium">Spouse</td>
+                      <td className="text-center py-2 px-4">{overallStats.eligibleBreakdown.spouse}</td>
+                      <td className="text-center py-2 px-4">{overallStats.ineligibleBreakdown.spouse}</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 px-2 font-medium">Kids</td>
+                      <td className="text-center py-2 px-4">{overallStats.eligibleBreakdown.kids}</td>
+                      <td className="text-center py-2 px-4">{overallStats.ineligibleBreakdown.kids}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-2 font-medium">Others</td>
+                      <td className="text-center py-2 px-4">0</td>
+                      <td className="text-center py-2 px-4">{overallStats.ineligibleBreakdown.others}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
