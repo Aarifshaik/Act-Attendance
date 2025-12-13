@@ -17,9 +17,15 @@ const STORAGE_KEY_SOCKET_URL = 'markme_backend_socket_url';
 const STORAGE_KEY_API_KEY = 'markme_api_key';
 
 // Default values - Using Cloudflare tunnel for production
-const DEFAULT_API_URL = process.env.NEXT_PUBLIC_MONGODB_API_URL || 'https://api.aarifshaik.me/api';
-const DEFAULT_SOCKET_URL = process.env.NEXT_PUBLIC_MONGODB_SOCKET_URL || 'https://api.aarifshaik.me';
-const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'myWM9^FBsUwwjaYDWF^yFfG7sTjm^3P!PvFx9sj&9FAVejo9ux';
+// const DEFAULT_API_URL = process.env.NEXT_PUBLIC_MONGODB_API_URL || 'https://api.aarifshaik.me/api';
+// const DEFAULT_SOCKET_URL = process.env.NEXT_PUBLIC_MONGODB_SOCKET_URL || 'https://api.aarifshaik.me';
+// const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'myWM9^FBsUwwjaYDWF^yFfG7sTjm^3P!PvFx9sj&9FAVejo9ux';
+
+// Default values - Hardcoded for GitHub Pages
+const DEFAULT_API_URL = 'https://api.aarifshaik.me/api';
+const DEFAULT_SOCKET_URL = 'https://api.aarifshaik.me';
+// Keep your real API key here
+const DEFAULT_API_KEY = 'myWM9^FBsUwwjaYDWF^yFfG7sTjm^3P!PvFx9sj&9FAVejo9ux';
 
 /**
  * Get the current backend API URL (from localStorage or default)
