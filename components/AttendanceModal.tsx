@@ -82,9 +82,10 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
   const [previewTime, setPreviewTime] = useState<Date>(new Date());
   const [saveError, setSaveError] = useState<string | null>(null);
   
-  // Token popup state
+  // Token and badge popup state
   const [showTokenPopup, setShowTokenPopup] = useState(false);
   const [tokenDelta, setTokenDelta] = useState<{ type: 'issue' | 'collect' | 'nochange'; count: number }>({ type: 'issue', count: 0 });
+  const [badgeCount, setBadgeCount] = useState(0);
 
   // Helper: count present members from attendance state and others
   const getPresentCount = (att: AttendanceState, kidNames: KidNamesState, others: OtherPerson[]): number => {
@@ -292,6 +293,23 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
       if (attendance.kid2) familyMembers.push(kidNames.kid2 || 'Child 2');
       if (attendance.kid3) familyMembers.push(kidNames.kid3 || 'Child 3');
       validOthers.forEach(o => familyMembers.push(o.name || 'Other'));
+
+      // BADGE LOGIC: Count eligible children (from master/employee.kids) who are marked present
+      let eligibleBadgeCount = 0;
+      if (employee.kids && Array.isArray(employee.kids)) {
+        const eligibleKidNames = employee.kids.map(k => (k.name || '').trim().toLowerCase()).filter(Boolean);
+        // Check which present kids match eligible
+        [
+          { key: 'kid1', present: attendance.kid1, name: kidNames.kid1 },
+          { key: 'kid2', present: attendance.kid2, name: kidNames.kid2 },
+          { key: 'kid3', present: attendance.kid3, name: kidNames.kid3 },
+        ].forEach(kid => {
+          if (kid.present && kid.name && eligibleKidNames.includes(kid.name.trim().toLowerCase())) {
+            eligibleBadgeCount++;
+          }
+        });
+      }
+      setBadgeCount(eligibleBadgeCount);
 
       toast({
         title: "Attendance Saved Successfully",
@@ -668,25 +686,32 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
         )}
       </DialogContent>
 
-      {/* Token Count Popup */}
+      {/* Token & Badge Count Popup */}
       <AlertDialog open={showTokenPopup} onOpenChange={setShowTokenPopup}>
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-center text-2xl">
-              🎟️ Token Count
+              🎟️ Token & Badge Issuance
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-center text-xl font-bold py-4">
-              {tokenDelta.type === 'nochange' ? (
-                <span className="text-gray-600">No change in tokens</span>
-              ) : tokenDelta.type === 'issue' ? (
-                <>
-                  Issue <span className="text-3xl text-green-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
-                </>
-              ) : (
-                <>
-                  Collect <span className="text-3xl text-red-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
-                </>
-              )}
+            <AlertDialogDescription className="text-center text-xl font-bold py-4 space-y-2">
+              <div>
+                {tokenDelta.type === 'nochange' ? (
+                  <span className="text-gray-600">No change in tokens</span>
+                ) : tokenDelta.type === 'issue' ? (
+                  <>
+                    Issue <span className="text-3xl text-green-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
+                  </>
+                ) : (
+                  <>
+                    Collect <span className="text-3xl text-red-600">{tokenDelta.count}</span> token set{tokenDelta.count !== 1 ? 's' : ''}
+                  </>
+                )}
+              </div>
+              <div>
+                <span className="text-blue-700">Eligible Child Badges: </span>
+                <span className="text-2xl text-blue-600 font-bold">{badgeCount}</span>
+                <span className="text-sm text-gray-500 ml-2">(Only for eligible children from master list)</span>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="justify-center sm:justify-center">
