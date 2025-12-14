@@ -85,7 +85,7 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
   // Token and badge popup state
   const [showTokenPopup, setShowTokenPopup] = useState(false);
   const [tokenDelta, setTokenDelta] = useState<{ type: 'issue' | 'collect' | 'nochange'; count: number }>({ type: 'issue', count: 0 });
-  const [badgeCount, setBadgeCount] = useState(0);
+  const [badgeDelta, setBadgeDelta] = useState<{ type: 'issue' | 'collect' | 'nochange'; count: number }>({ type: 'issue', count: 0 });
 
   // Helper: count present members from attendance state and others
   const getPresentCount = (att: AttendanceState, kidNames: KidNamesState, others: OtherPerson[]): number => {
@@ -294,22 +294,56 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
       if (attendance.kid3) familyMembers.push(kidNames.kid3 || 'Child 3');
       validOthers.forEach(o => familyMembers.push(o.name || 'Other'));
 
-      // BADGE LOGIC: Count eligible children (from master/employee.kids) who are marked present
-      let eligibleBadgeCount = 0;
+      // BADGE LOGIC: Dynamic badge issuance/collection for eligible children
+      let eligibleKidNames: string[] = [];
       if (employee.kids && Array.isArray(employee.kids)) {
-        const eligibleKidNames = employee.kids.map(k => (k.name || '').trim().toLowerCase()).filter(Boolean);
-        // Check which present kids match eligible
-        [
-          { key: 'kid1', present: attendance.kid1, name: kidNames.kid1 },
-          { key: 'kid2', present: attendance.kid2, name: kidNames.kid2 },
-          { key: 'kid3', present: attendance.kid3, name: kidNames.kid3 },
-        ].forEach(kid => {
-          if (kid.present && kid.name && eligibleKidNames.includes(kid.name.trim().toLowerCase())) {
-            eligibleBadgeCount++;
-          }
-        });
+        eligibleKidNames = employee.kids.map(k => (k.name || '').trim().toLowerCase()).filter(Boolean);
       }
-      setBadgeCount(eligibleBadgeCount);
+      // Helper to get eligible present children count from attendance state and kidNames
+      const getEligiblePresentChildrenCount = (att: AttendanceState, kidNames: KidNamesState) => {
+        return [
+          { present: att.kid1, name: kidNames.kid1 },
+          { present: att.kid2, name: kidNames.kid2 },
+          { present: att.kid3, name: kidNames.kid3 },
+        ].filter(kid => kid.present && kid.name && eligibleKidNames.includes(kid.name.trim().toLowerCase())).length;
+      };
+
+      let badgeDeltaType: 'issue' | 'collect' | 'nochange' = 'issue';
+      let badgeDeltaCount = 0;
+      const currEligibleBadgeCount = getEligiblePresentChildrenCount(attendance, kidNames);
+      if (isEditing && employee.attendanceRecord) {
+        // Previous eligible badge count
+        const prevAtt: AttendanceState = {
+          employee: employee.attendanceRecord.employee,
+          spouse: employee.attendanceRecord.spouse,
+          kid1: employee.attendanceRecord.kid1,
+          kid2: employee.attendanceRecord.kid2,
+          kid3: employee.attendanceRecord.kid3,
+        };
+        const prevKidNames: KidNamesState = employee.attendanceRecord.kidNames
+          ? {
+              kid1: employee.attendanceRecord.kidNames.kid1 ?? '',
+              kid2: employee.attendanceRecord.kidNames.kid2 ?? '',
+              kid3: employee.attendanceRecord.kidNames.kid3 ?? '',
+            }
+          : { kid1: '', kid2: '', kid3: '' };
+        const prevEligibleBadgeCount = getEligiblePresentChildrenCount(prevAtt, prevKidNames);
+        const badgeDiff = currEligibleBadgeCount - prevEligibleBadgeCount;
+        if (badgeDiff > 0) {
+          badgeDeltaType = 'issue';
+          badgeDeltaCount = badgeDiff;
+        } else if (badgeDiff < 0) {
+          badgeDeltaType = 'collect';
+          badgeDeltaCount = Math.abs(badgeDiff);
+        } else {
+          badgeDeltaType = 'nochange';
+          badgeDeltaCount = 0;
+        }
+      } else {
+        badgeDeltaType = 'issue';
+        badgeDeltaCount = currEligibleBadgeCount;
+      }
+      setBadgeDelta({ type: badgeDeltaType, count: badgeDeltaCount });
 
       toast({
         title: "Attendance Saved Successfully",
@@ -708,8 +742,17 @@ function AttendanceModalContent({ employee, isOpen, onClose, onSave }: Attendanc
                 )}
               </div>
               <div>
-                <span className="text-blue-700">Eligible Child Badges: </span>
-                <span className="text-2xl text-blue-600 font-bold">{badgeCount}</span>
+                {badgeDelta.type === 'nochange' ? (
+                  <span className="text-gray-600">No change in badges</span>
+                ) : badgeDelta.type === 'issue' ? (
+                  <>
+                    Issue <span className="text-2xl text-blue-600 font-bold">{badgeDelta.count}</span> badge{badgeDelta.count !== 1 ? 's' : ''} to eligible children
+                  </>
+                ) : (
+                  <>
+                    Collect <span className="text-2xl text-red-600 font-bold">{badgeDelta.count}</span> badge{badgeDelta.count !== 1 ? 's' : ''} from eligible children
+                  </>
+                )}
                 <span className="text-sm text-gray-500 ml-2">(Only for eligible children from master list)</span>
               </div>
             </AlertDialogDescription>
