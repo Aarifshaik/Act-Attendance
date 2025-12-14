@@ -5,7 +5,7 @@ export default function Footer() {
         <span className="text-xs text-gray-500">
           Developed by{" "}
           <a
-            href="https://github.com/Aarifshaik"
+            // href="https://github.com/Aarifshaik"
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold text-blue-600 hover:underline"
